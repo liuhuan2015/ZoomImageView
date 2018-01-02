@@ -26,6 +26,7 @@ public class ZoomImageView extends ImageView implements ScaleGestureDetector.OnS
     private static final String TAG = ZoomImageView.class.getSimpleName();
 
     public static final float SCALE_MAX = 4.0f;
+    public static final float SCALE_MID = 2.0f;
 
     //初始化时的缩放比例,如果图片的宽或高大于屏幕,此值将小于0
     private float initScale = 1.0f;
@@ -45,6 +46,7 @@ public class ZoomImageView extends ImageView implements ScaleGestureDetector.OnS
     private boolean isCheckTopAndBottom;
     private boolean isCheckLeftAndRight;
     private double mTouchSlop;
+    private boolean isAutoScale;//是否自动缩放(手指捏合放大或缩小)
 
 
     public ZoomImageView(Context context) {
@@ -66,17 +68,31 @@ public class ZoomImageView extends ImageView implements ScaleGestureDetector.OnS
                 new GestureDetector.SimpleOnGestureListener() {
                     @Override
                     public boolean onDoubleTap(MotionEvent e) {
+                        if (isAutoScale) {
+                            return true;
+                        }
 
+                        float x = e.getX();
+                        float y = e.getY();
+                        Log.e("DoubleTap", getScale() + "," + initScale);
 
-
-
-
-
-                        return super.onDoubleTap(e);
+                        if (getScale() < SCALE_MID) {
+                            ZoomImageView.this.postDelayed(
+                                    new AutoScaleRunnable(SCALE_MID, x, y), 16);
+                            isAutoScale = true;
+                        } else if (getScale() >= SCALE_MID
+                                && getScale() < SCALE_MAX) {
+                            ZoomImageView.this.postDelayed(
+                                    new AutoScaleRunnable(SCALE_MAX, x, y), 16);
+                            isAutoScale = true;
+                        } else {
+                            ZoomImageView.this.postDelayed(
+                                    new AutoScaleRunnable(initScale, x, y), 16);
+                            isAutoScale = true;
+                        }
+                        return true;
                     }
                 });
-
-
     }
 
     @Override
@@ -166,6 +182,11 @@ public class ZoomImageView extends ImageView implements ScaleGestureDetector.OnS
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
+
+        if (mGestureDetector.onTouchEvent(event)) {
+            return true;
+        }
+
         mScaleGestureDetector.onTouchEvent(event);
 
         float x = 0, y = 0;
@@ -336,5 +357,51 @@ public class ZoomImageView extends ImageView implements ScaleGestureDetector.OnS
             matrix.mapRect(rectF);
         }
         return rectF;
+    }
+
+    /**
+     * 自动缩放的任务
+     */
+    private class AutoScaleRunnable implements Runnable {
+
+        static final float BIGGER = 1.07f;
+        static final float SMALLER = 0.93f;
+        private float mTargetScale;
+        private float temScale;
+        //缩放的中心
+        private float x, y;
+
+        public AutoScaleRunnable(float targetScale, float x, float y) {
+            this.mTargetScale = targetScale;
+            this.x = x;
+            this.y = y;
+            if (getScale() < mTargetScale) {
+                temScale = BIGGER;
+            } else {
+                temScale = SMALLER;
+            }
+        }
+
+        @Override
+        public void run() {
+            //进行缩放
+            mScaleMatrix.postScale(temScale, temScale, x, y);
+            checkBorderAndCenterWhenScale();
+            setImageMatrix(mScaleMatrix);
+
+            final float currentScale = getScale();
+            //如果值在合法的范围内,继续缩放
+            if ((temScale > 1f && currentScale < mTargetScale)
+                    || (temScale < 1f && mTargetScale < currentScale)) {
+                ZoomImageView.this.postDelayed(this, 16);
+            } else {
+                //设置为目标的缩放比例
+                final float deltaScale = mTargetScale / currentScale;
+                mScaleMatrix.postScale(deltaScale, deltaScale, x, y);
+                checkBorderAndCenterWhenScale();
+                setImageMatrix(mScaleMatrix);
+                isAutoScale = false;
+            }
+        }
     }
 }
